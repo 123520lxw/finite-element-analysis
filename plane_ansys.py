@@ -14,32 +14,33 @@ mpl.rcParams["axes.unicode_minus"]=False # 正常显示负号
 
 class Node:   # 定义节点，由x,y两个坐标表示
     def __init__(self, x, y, no=-1):
-        self.x = x
-        self.y = y
+        self.x = x  # x坐标
+        self.y = y  # y坐标
         self.no = no  # 节点编号
         self.fixed = False  # 是否被固定
 
 
 class Element:
     def __init__(self, node):  # 三节点三角形单元
-        self.area = 0.0
-        self.node = node
+        self.area = 0.0  # 面积
+        self.node = node  # 节点集合(包含三个节点)
 
     def b_array(self):  # 应变矩阵
-        nodes = np.array([[node.x, node.y] for node in self.node])
-        x1, y1 = nodes[0]
-        x2, y2 = nodes[1]
-        x3, y3 = nodes[2]
-        self.area = 0.5 * abs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        nodes = np.array([[node.x, node.y] for node in self.node])  # 将每个节点的x,y坐标提取成一个列表
+        x1, y1 = nodes[0]  # 第一个节点x,y坐标
+        x2, y2 = nodes[1]  # 第二个节点x,y坐标
+        x3, y3 = nodes[2]  # 第三个节点x,y坐标
+        self.area = 0.5 * abs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))  # 根据三个点坐标求面积
         b = np.array([[y2 - y3, 0, y3 - y1, 0, y1 - y2, 0],
                       [0, x3 - x2, 0, x1 - x3, 0, x2 - x1],
                       [x3 - x2, y2 - y3, x1 - x3, y3 - y1, x2 - x1, y1 - y2]]) / (2 * self.area)
         return b
+        # 根据应变矩阵的表达式求出应变矩阵
 
 
 class Plane:
     def __init__(self, e, nu, l, w, t, x_num, y_num):
-        self.displacement = None
+        self.displacement = None  # 位移矩阵
         self.elements = []  # 单元集合
         self.nodes = []  # 节点集合
         self.e = e  # 弹性模量
@@ -51,45 +52,45 @@ class Plane:
         self.y_num = y_num  # y方向节点数量
         self.k = None  # 全局刚度矩阵
         self.f = None  # 荷载矩阵
-        self.generate_mesh()
-        self.k_global()
-        self.apply_boundary()
+        self.generate_mesh()  # 划分网格
+        self.k_global()  # 求全局刚度矩阵
+        self.apply_boundary()  # 施加荷载
 
-    def d_array(self):  # 弹性矩阵
+    def d_array(self):  # 根据弹性矩阵的表达式求出弹性矩阵
         d = self.e / (1 - self.nu ** 2) * np.array([[1, self.nu, 0],
                                                     [self.nu, 1, 0],
                                                     [0, 0, (1 - self.nu) / 2]])
         return d
 
     def k_global(self):  # 全局刚度矩阵
-        sum_nodes = self.y_num * self.x_num
-        self.k = np.zeros((2*sum_nodes, 2*sum_nodes))
-        for element in self.elements:
-            b = element.b_array()
-            a = element.area
-            d = self.d_array()
+        sum_nodes = self.y_num * self.x_num  # 节点数量
+        self.k = np.zeros((2*sum_nodes, 2*sum_nodes))  # 先将全局刚度矩阵设为全零矩阵
+        for element in self.elements:  # 先求出每个单元的刚度矩阵
+            b = element.b_array()  # 应变矩阵
+            a = element.area  # 单元面积
+            d = self.d_array()  # 弹性矩阵
             k_local = a*np.dot(b.T, np.dot(d, b))*self.t  # 单元刚度矩阵
-            for i in range(3):  # 每个单元有三个节点
-                for j in range(3):
-                    for ii in range(2):  # 每个节点两个自由度
-                        for jj in range(2):
-                            row = 2 * element.node[i].no + ii
-                            col = 2 * element.node[j].no + jj
-                            self.k[row, col] += k_local[2 * i + ii, 2 * j + jj]
+            for i in range(3):  # 表示单元刚度矩阵的行号
+                for j in range(3):  # 表示单元刚度矩阵的列号
+                    for ii in range(2):  # 表示单元刚度矩阵的x方向的刚度
+                        for jj in range(2):  # 表示单元刚度矩阵的y方向的刚度
+                            row = 2 * element.node[i].no + ii  # 全局刚度矩阵上对应的行位置
+                            col = 2 * element.node[j].no + jj  # 全局刚度矩阵上对应的列位置
+                            self.k[row, col] += k_local[2 * i + ii, 2 * j + jj]  # 将单元刚度矩阵置入全局刚度矩阵
 
     def generate_mesh(self):
-        dx = self.l / (self.x_num-1)
-        dy = self.w / (self.y_num-1)
-        no = 0
+        dx = self.l / (self.x_num-1)  # 三角形单元的底
+        dy = self.w / (self.y_num-1)  # 三角形单元的高
+        no = 0  # 节点的编号(从左到右,从上到下)
         for j in range(self.y_num):  # 生成节点
             for i in range(self.x_num):
-                x = i * dx
-                y = j * dy
-                self.nodes.append(Node(x, y, no))
-                no += 1
-        for j in range(self.y_num-1):  # 生成单元
+                x = i * dx  # 节点的x坐标
+                y = j * dy  # 节点的y坐标
+                self.nodes.append(Node(x, y, no))  # 将节点置入平板的节点内
+                no += 1  # 编号自增
+        for j in range(self.y_num-1):  # 生成单元,将每四个节点分为两个三角形单元
             for i in range(self.x_num-1):
-                n1 = i + j * (self.x_num + 1)
+                n1 = i + j * (self.x_num + 1) - j
                 n2 = n1 + 1
                 n3 = n1 + self.x_num
                 n4 = n3 + 1
@@ -108,24 +109,28 @@ class Plane:
             self.k[2 * i * self.x_num + 1, 2 * i * self.x_num + 1] = 1
             # 将左侧固定的节点的刚度矩阵行和列置零，并设置对角线上的值为1，表示这些自由度被完全约束
 
-    def apply_load(self, nodes, force, direction=1):  # 定义荷载，1表示y方向,0表示x方向
-        self.f = np.zeros(2*len(self.nodes))
-        for node in nodes:
-            self.f[2*node + direction] = force/len(nodes)
+    def apply_load(self, nodes_force):  # 定义荷载,nodes_force为节点,x方向荷载, y方向荷载
+        self.f = np.zeros(2*len(self.nodes))  # 荷载矩阵
+        for num in nodes_force:
+            node, x, y = [i for i in num]
+            self.f[2 * node] = x  # 对应节点上x方向上的荷载
+            self.f[2 * node + 1] = y  # 对应节点上y方向上的荷载
 
     def solve(self):
+        # 根据 F = K * X 反推出X,即位移矩阵
         self.displacement = np.linalg.solve(self.k, self.f)
 
-    def plot_deformation(self):
-        plt.figure(figsize=(10, 5))
-        plt.subplot(1, 2, 1)
+    def plot_deformation(self):  # 将求解出的变形可视化
+        plt.figure(figsize=(10, 5))  # 窗口大小
+        plt.subplot(1, 2, 1)  # 分为两个视图，左边为未变形形状
         plt.title('未变形形状')
         for element in self.elements:
             raw_data = [[node.x, node.y] for node in element.node]
             plt.gca().add_patch(Polygon(raw_data, closed=True, fill=None, edgecolor='blue'))
+            # 将平板以三角形单元的形式输出
         plt.xlabel('X')
         plt.ylabel('Y')
-        plt.grid(True)
+        plt.grid(True)  # 显示网格
 
         plt.subplot(1, 2, 2)
         plt.title('变形后形状')
@@ -135,34 +140,37 @@ class Plane:
         plt.xlabel('X')
         plt.ylabel('Y')
         plt.grid(True)
+        plt.tight_layout()  # 自动调整子图间距
+        plt.show()  # 绘制出图像
 
-        plt.tight_layout()
-        plt.savefig('./result.jpg')
+    def save_result(self, name):  # 保存结果
+        x = self.displacement[::2]  # x方向上位移
+        y = self.displacement[1::2]  # y方向上位移
+        x_label = 'x方向上位移'
+        y_label = 'y方向上位移'
+        df = pd.DataFrame({
+            x_label: x,
+            y_label: y
+        })
+        df.to_excel(f'{name}.xlsx', index=False)
 
-def load_ansys_data():
-    x_displacement = pd.read_excel('./ansys_result.xlsx', sheet_name='Sheet1', header=None)[1]
-    y_displacement = pd.read_excel('./ansys_result.xlsx', sheet_name='Sheet2', header=None)[1]
-    return x_displacement, y_displacement
+
+def main():  # 主函数plane_ansys.py
+    e = 210e9
+    nu = 0.3
+    length = 1.0
+    weight = 0.1
+    thickness = 0.001
+    num_x = 11
+    num_y = 2
+    plate = Plane(e, nu, length, weight, thickness, num_x, num_y)
+    nodes_force = [[num_x-1, 0, 10000]]  # 荷载施加在平板右上方节点上
+    plate.apply_load(nodes_force)
+    plate.solve()
+    print(plate.f)
+    plate.plot_deformation()
+    plate.save_result('result')
 
 
-e = 210e9
-nu = 0.3
-length = 1.0
-weight = 0.1
-thickness = 0.001
-num_x = 11
-num_y = 2
-plate = Plane(e, nu, length, weight, thickness, num_x, num_y)
-plate.apply_boundary()
-nodes = [num_x-1]  # 荷载施加在平板右上方节点上
-plate.apply_load(nodes, 10000)
-plate.solve()
-plate.plot_deformation()
-x1 = plate.displacement[::2]
-y1 = plate.displacement[1::2]
-data = {
-    'x方向上位移': x1,
-    'y方向上唯一': y1
-}
-pd1 = pd.DataFrame(data)
-pd1.to_excel('./result.xlsx', index=False)
+if __name__ == '__main__':
+    main()
